@@ -11,14 +11,17 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.1",
-    "@circle-fin/developer-controlled-wallets": "^7.3.0",
+    "@circle-fin/x402-batching": "^3.0.4",
+    "@x402/core": "^2.11.0",
+    "@x402/evm": "^2.11.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
-    "ethers": "^6.13.4",
     "express": "^4.21.2",
+    "openai": "^6.44.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-router-dom": "^6.27.0"
+    "react-router-dom": "^6.27.0",
+    "viem": "^2.48.11"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.4",
