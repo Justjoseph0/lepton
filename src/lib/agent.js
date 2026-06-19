@@ -1,12 +1,21 @@
-// Calls the Inkpay backend AI pricing agent.
-// Claude API runs server-side; this module is the frontend-facing fetch wrapper.
+// Frontend wrapper for the Inkpay AI pricing agent.
+// Calls POST /api/articles/price and returns the structured pricing decision.
 
-export async function getArticlePrice({ url, title, wordCount, excerpt }) {
+export async function priceArticle({ articleTitle, articleContent, blogUrl }) {
+  if (!articleContent?.trim()) throw new Error('articleContent is required')
+
   const res = await fetch('/api/articles/price', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ url, title, wordCount, excerpt }),
+    body: JSON.stringify({ articleTitle, articleContent, blogUrl }),
   })
-  if (!res.ok) throw new Error(`Pricing agent failed: ${res.status}`)
-  return res.json() // { price: number, reasoning: string }
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw new Error(body.error ?? `Pricing agent failed (${res.status})`)
+  }
+
+  // Returns: { price, priceInAtomicUnits, reasoning, category, depthLevel,
+  //            readerValue, wordCount, readingTime, confidenceScore }
+  return res.json()
 }
