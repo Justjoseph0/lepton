@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import OpenAI from 'openai'
+import { setArticlePrice } from '../lib/articlePrices.js'
 
 const router = Router()
 
@@ -132,12 +133,24 @@ function extractJson(raw) {
   throw new Error('No JSON object found in model response')
 }
 
+function logDetailedError(context, err) {
+  console.error(`[articles/price] ${context} failed`)
+  console.error('[articles/price] error message:', err?.message ?? err)
+  console.error('[articles/price] stack trace:', err?.stack ?? '(no stack trace available)')
+  if (err?.response) {
+    console.error('[articles/price] error response:', err.response)
+  }
+  if (err?.cause) {
+    console.error('[articles/price] error cause:', err.cause)
+  }
+}
+
 // POST /api/articles/price
-// Body: { articleTitle, articleContent, blogUrl? }
+// Body: { articleId?, articleTitle, articleContent, blogUrl? }
 // Returns: { price, priceInAtomicUnits, reasoning, category, depthLevel,
-//            readerValue, wordCount, readingTime, confidenceScore }
+//            readerValue, wordCount, readingTime, confidenceScore, articleId? }
 router.post('/price', async (req, res) => {
-  const { articleTitle, articleContent, blogUrl } = req.body
+  const { articleId, articleTitle, articleContent, blogUrl } = req.body
 
   if (!articleContent || articleContent.trim().length < 10) {
     return res.status(400).json({ error: 'articleContent is required' })
@@ -158,27 +171,50 @@ ${articleContent.trim()}`
 
   try {
     console.log('[articles/price] OPENAI_API_KEY present:', !!process.env.OPENAI_API_KEY)
-    const completion = await getClient().chat.completions.create({
-      model: 'gpt-4o',
-      max_tokens: 512,
-      messages: [
-        { role: 'system', content: PRICING_SYSTEM_PROMPT },
-        { role: 'user',   content: userMessage },
-      ],
-    })
+    let completion
+    try {
+      completion = await getClient().chat.completions.create({
+        model: 'gpt-4o',
+        max_tokens: 512,
+        messages: [
+          { role: 'system', content: PRICING_SYSTEM_PROMPT },
+          { role: 'user',   content: userMessage },
+        ],
+      })
+    } catch (err) {
+      logDetailedError('OpenAI chat completion', err)
+      throw err
+    }
 
     const raw = completion.choices[0].message.content
     console.log('[articles/price] raw model response:', raw)
 
-    const parsed = extractJson(raw)
+    let parsed
+    try {
+      parsed = extractJson(raw)
+    } catch (err) {
+      console.error('[articles/price] JSON parse failed for raw model response:', raw)
+      logDetailedError('model response JSON parse', err)
+      throw err
+    }
 
     // Validate and clamp price
     const price = Math.min(0.05, Math.max(0.001, Number(parsed.price)))
     const priceInAtomicUnits = Math.round(price * 1_000_000)
+    let storedPrice
+    try {
+      storedPrice = setArticlePrice(articleId, price)
+    } catch (err) {
+      console.error('[articles/price] setArticlePrice inputs:', { articleId, price })
+      logDetailedError('setArticlePrice', err)
+      throw err
+    }
 
     res.json({
       price,
       priceInAtomicUnits,
+      articleId: articleId ?? null,
+      priceStored: storedPrice !== null,
       reasoning:       parsed.reasoning       ?? '',
       category:        parsed.category        ?? 'other',
       depthLevel:      parsed.depthLevel      ?? 'overview',
@@ -188,7 +224,7 @@ ${articleContent.trim()}`
       readingTime,
     })
   } catch (err) {
-    console.error('[articles/price] error:', err.message)
+    logDetailedError('request handler', err)
     res.status(500).json({ error: 'Pricing agent failed', details: err.message })
   }
 })

@@ -92,6 +92,22 @@ function ResultCard({ result }) {
           <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Agent confidence</p>
           <ConfidenceBar score={result.confidenceScore} />
         </div>
+
+        {/* Article ID */}
+        {result.articleId && (
+          <div className="border-t border-gray-800 pt-4">
+            <div className="flex items-center justify-between mb-1.5">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Article ID</p>
+              {result.priceStored
+                ? <span className="text-xs text-emerald-400 font-medium">price stored</span>
+                : <span className="text-xs text-amber-400 font-medium">not stored</span>}
+            </div>
+            <p className="text-xs font-mono bg-gray-800 rounded-lg px-3 py-2 text-indigo-300 break-all select-all cursor-text">
+              {result.articleId}
+            </p>
+            <p className="text-xs text-gray-600 mt-1">Select and copy to test the unlock endpoint.</p>
+          </div>
+        )}
       </div>
     </div>
   )
@@ -111,7 +127,12 @@ export default function AgentDemo() {
     setError(null)
     setResult(null)
     try {
+      const slug = title.trim()
+        ? title.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+        : 'article'
+      const articleId = `${slug}-${Date.now().toString(36)}`
       const data = await priceArticle({
+        articleId,
         articleTitle: title || undefined,
         articleContent: content,
         blogUrl: blogUrl || undefined,
