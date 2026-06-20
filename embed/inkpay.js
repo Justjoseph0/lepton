@@ -293,12 +293,9 @@
           method: 'wallet_switchEthereumChain',
           params: [{ chainId: ARC_CHAIN_ID }],
         }).catch(function (err) {
-          console.log('[inkpay] wallet_switchEthereumChain error:', {
-            code: err.code,
-            message: err.message,
-            fullError: err,
-          })
-          if (err.code !== 4902) throw err
+          var is4902 = err.code === 4902 ||
+            (err.data && err.data.originalError && err.data.originalError.code === 4902)
+          if (!is4902) throw err
           return window.ethereum.request({
             method: 'wallet_addEthereumChain',
             params: [ARC_CHAIN_PARAMS],
