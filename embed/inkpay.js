@@ -425,6 +425,7 @@
           method: 'eth_signTypedData_v4',
           params: [account, JSON.stringify(typedData)],
         }).then(function (sig) {
+          console.log('[inkpay] eth_signTypedData_v4 succeeded, sig:', sig.slice(0, 20) + '…')
           // Step 3 — retry with signed payload
           var payload = {
             x402Version: 2,
@@ -438,7 +439,15 @@
             accepted: accepted,
             resource: challenge.resource,
           }
+          console.log('[inkpay] sending retry fetch with payment-signature header to', endpoint)
           return fetch(endpoint, { headers: { 'payment-signature': b64e(payload) } })
+        }, function (sigErr) {
+          console.log('[inkpay] eth_signTypedData_v4 failed:', {
+            code: sigErr.code,
+            message: sigErr.message,
+            fullError: sigErr,
+          })
+          throw sigErr
         })
       })
       .then(function (r2) {
