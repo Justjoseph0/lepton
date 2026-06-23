@@ -125,6 +125,12 @@ function logPaymentAttempt(req, res, next) {
 router.get('/unlock/:articleId', logPaymentAttempt, dynamicGatewayMiddleware, (req, res) => {
   console.log('[payments/unlock] ✓ verified:', JSON.stringify(req.payment))
   const { payer, amount, network, transaction } = req.payment
+  console.log('[payments/unlock] → calling logTransaction with:', {
+    articleId:    req.params.articleId,
+    price:        req.inkpayPrice,
+    payer,
+    settlementId: transaction,
+  })
   logTransaction({
     articleId:    req.params.articleId,
     price:        req.inkpayPrice,
@@ -132,6 +138,7 @@ router.get('/unlock/:articleId', logPaymentAttempt, dynamicGatewayMiddleware, (r
     settlementId: transaction,
     timestamp:    new Date().toISOString(),
   })
+  console.log('[payments/unlock] ✓ logTransaction called successfully')
   res.json({
     unlocked: true,
     articleId: req.params.articleId,
