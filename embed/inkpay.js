@@ -14,6 +14,24 @@
 ;(function () {
   'use strict'
 
+  /* ── Immediate hide (prevent flash of unprotected content) ────────────── */
+
+  var _alreadyUnlocked = (function () {
+    try {
+      var s = window.location.pathname.replace(/^\/|\/$/g, '') || 'index'
+      return !!(JSON.parse(localStorage.getItem('inkpay_v1') || '{}')[s])
+    } catch (_) { return false }
+  })()
+
+  var _hideStyle = null
+  if (!_alreadyUnlocked) {
+    _hideStyle = document.createElement('style')
+    _hideStyle.textContent =
+      '.gh-content,.post-content,.post-full-content,' +
+      '.article-content,.entry-content,.e-content{display:none!important}'
+    document.head.appendChild(_hideStyle)
+  }
+
   /* ── Config ────────────────────────────────────────────────────────────── */
 
   var PRICE_DISPLAY   = '$0.0010'
@@ -73,6 +91,13 @@
       m[slug()] = Date.now()
       localStorage.setItem(STORAGE_KEY, JSON.stringify(m))
     } catch (_) {}
+  }
+
+  function removeHideStyle() {
+    if (_hideStyle && _hideStyle.parentNode) {
+      _hideStyle.parentNode.removeChild(_hideStyle)
+      _hideStyle = null
+    }
   }
 
   /* ── Ghost content detection ───────────────────────────────────────────── */
@@ -481,20 +506,23 @@
 
   function boot() {
     // Only run on post pages, not the home page or tag/author archives
-    if (window.location.pathname === '/') return
-    if (!document.querySelector('.gh-content, .post-content, .post-full-content, article')) return
+    if (window.location.pathname === '/') { removeHideStyle(); return }
+    if (!document.querySelector('.gh-content, .post-content, .post-full-content, article')) { removeHideStyle(); return }
 
     // Already unlocked — show everything immediately
-    if (isUnlocked()) return
+    if (isUnlocked()) { removeHideStyle(); return }
 
     var container = findContent()
     if (!container) {
       console.warn('[inkpay] No article content container found (tried .gh-content, .post-content, etc.)')
-      return
+      removeHideStyle(); return
     }
 
     injectCSS()
-    if (!scaffold(container)) return
+    if (!scaffold(container)) { removeHideStyle(); return }
+
+    // DOM now owns the hide — CSS rule is no longer needed
+    removeHideStyle()
 
     // Inject card markup, then render initial state
     wrapEl.innerHTML =
@@ -517,6 +545,7 @@
   }
   ethersScript.onerror = function () {
     console.error('[inkpay] Failed to load ethers.js from CDN — paywall will not function.')
+    removeHideStyle()
   }
   document.head.appendChild(ethersScript)
 })()
