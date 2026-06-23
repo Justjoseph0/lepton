@@ -115,6 +115,7 @@ function ResultCard({ result }) {
 
 export default function AgentDemo() {
   const [title, setTitle] = useState('')
+  const [ghostSlug, setGhostSlug] = useState('')
   const [content, setContent] = useState(PLACEHOLDER_ARTICLE)
   const [blogUrl, setBlogUrl] = useState('')
   const [result, setResult] = useState(null)
@@ -127,10 +128,10 @@ export default function AgentDemo() {
     setError(null)
     setResult(null)
     try {
-      const slug = title.trim()
+      const derived = title.trim()
         ? title.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
         : 'article'
-      const articleId = `${slug}-${Date.now().toString(36)}`
+      const articleId = ghostSlug.trim() || `${derived}-${Date.now().toString(36)}`
       const data = await priceArticle({
         articleId,
         articleTitle: title || undefined,
@@ -176,6 +177,23 @@ export default function AgentDemo() {
                 className="w-full bg-gray-900 border border-gray-800 rounded-xl px-4 py-2.5 text-sm
                   text-white placeholder-gray-600 focus:outline-none focus:border-indigo-500 transition"
               />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
+                Ghost slug <span className="normal-case font-normal text-indigo-400">(exact URL slug — required to store the price)</span>
+              </label>
+              <input
+                type="text"
+                value={ghostSlug}
+                onChange={(e) => setGhostSlug(e.target.value.trim())}
+                placeholder="why-some-clips-go-viral-in-japan"
+                className="w-full bg-gray-900 border border-gray-800 rounded-xl px-4 py-2.5 text-sm
+                  text-white placeholder-gray-600 focus:outline-none focus:border-indigo-500 transition font-mono"
+              />
+              <p className="text-xs text-gray-600 mt-1">
+                Copy from your Ghost post URL: yourblog.com/<span className="text-indigo-500">this-part</span>
+              </p>
             </div>
 
             <div>
