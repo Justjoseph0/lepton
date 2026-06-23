@@ -15,8 +15,6 @@ function fmtPrice(n) {
 
 // ─── Data layer ───────────────────────────────────────────────────────────────
 
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:3001'
-
 function timeAgo(ts) {
   const min = Math.floor((Date.now() - new Date(ts).getTime()) / 60000)
   if (min < 1)  return 'just now'
@@ -38,7 +36,7 @@ function useDashboardData() {
   })
 
   useEffect(() => {
-    fetch(`${API_BASE}/api/dashboard/stats`)
+    fetch('/api/dashboard/stats')
       .then(r => {
         if (!r.ok) throw new Error(`Dashboard API returned ${r.status}`)
         return r.json()
