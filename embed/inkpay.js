@@ -34,7 +34,7 @@
 
   /* ── Config ────────────────────────────────────────────────────────────── */
 
-  var PRICE_DISPLAY   = '$0.0010'
+  var priceDisplay    = '$0.0010'  // updated dynamically from 402 challenge
   var DEPOSIT_AMOUNT  = '0.5'       // USDC
   var DEPOSIT_ATOMIC  = '500000'    // 0.5 × 10^6
   var THRESHOLD       = 50000       // 0.05 USDC — prompt deposit below this
@@ -280,7 +280,7 @@
     return [
       '<div class="ip-icon" style="background:#eef2ff;color:#6366f1">' + IC.lock + '</div>',
       badge(),
-      '<p class="ip-price">' + PRICE_DISPLAY + ' <span class="ip-unit">USDC</span></p>',
+      '<p class="ip-price">' + priceDisplay + ' <span class="ip-unit">USDC</span></p>',
       '<p class="ip-sub">to unlock the full article</p>',
       '<button class="ip-btn" id="ip-unlock"' + (loading ? ' disabled' : '') + '>',
       loading ? IC.spinSm + ' Processing…' : 'Unlock Article',
@@ -385,6 +385,22 @@
   }
 
   /* ── x402 payment ──────────────────────────────────────────────────────── */
+
+  function fetchDisplayPrice() {
+    var endpoint = API_BASE + '/api/payments/unlock/' + encodeURIComponent(slug()) +
+      (SELLER ? '?seller=' + encodeURIComponent(SELLER) : '')
+    fetch(endpoint)
+      .then(function (r) {
+        if (r.status !== 402) return
+        var header = r.headers.get('PAYMENT-REQUIRED')
+        if (!header) return
+        var amount = parseInt(b64d(header).accepts[0].amount, 10)
+        var usd = amount / 1000000
+        priceDisplay = usd < 0.01 ? '$' + usd.toFixed(4) : '$' + usd.toFixed(3)
+        render()
+      })
+      .catch(function () {})
+  }
 
   function rnd32() {
     var b = new Uint8Array(32)
@@ -531,6 +547,7 @@
         '<div id="inkpay-body"></div>' +
       '</div>'
     render()
+    fetchDisplayPrice()
   }
 
   // Dynamically load ethers v5 from CDN, then boot once DOM is ready
