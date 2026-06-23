@@ -26,6 +26,10 @@ app.use('/api/dashboard', dashboardRouter)
 
 app.get('/health', (_req, res) => res.json({ status: 'ok' }))
 
+// Serve the built Vite frontend — must come after all /api and /embed routes
+app.use(express.static(join(__dirname, '../dist')))
+app.get('*', (_req, res) => res.sendFile(join(__dirname, '../dist/index.html')))
+
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Inkpay server running on http://0.0.0.0:${PORT}`)
 })
