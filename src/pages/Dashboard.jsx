@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -14,44 +14,62 @@ function fmtPrice(n) {
 }
 
 // ─── Data layer ───────────────────────────────────────────────────────────────
-// Swap useDashboardData() for a real hook when the API is ready.
-// The return shape (stats, transactions, articles, wallet, loading, error)
-// is the contract — internals can change freely.
 
-const MOCK_WALLET = '0x4e03d7a2F81bB8C91E4432f6D3a87C301a9c2f0'
+const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:3001'
+
+function timeAgo(ts) {
+  const min = Math.floor((Date.now() - new Date(ts).getTime()) / 60000)
+  if (min < 1)  return 'just now'
+  if (min < 60) return `${min} min ago`
+  const hr = Math.floor(min / 60)
+  if (hr < 24)  return `${hr} hr ago`
+  const days = Math.floor(hr / 24)
+  return `${days} day${days !== 1 ? 's' : ''} ago`
+}
 
 function useDashboardData() {
-  return {
-    loading: false,
-    error: null,
-    wallet: MOCK_WALLET,
-    stats: {
-      totalEarnings: 2.847,
-      totalUnlocked: 312,
-      avgPrice: 0.00912,
-      activeReaders: 87,
-    },
-    transactions: [
-      { id: '1',  article: 'The Arc Blockchain Opportunity Nobody Is Talking About', price: 0.012, payer: '0xA1b2C3d4E5f61234', settlement: 'stl_8kJq2Pm', time: '2 min ago' },
-      { id: '2',  article: 'The Quiet Death of the Subscription Bundle',              price: 0.008, payer: '0xB3c4D5e6F7a08765', settlement: 'stl_3pRz9Xn', time: '14 min ago' },
-      { id: '3',  article: 'Why DeFi Needs Better UX Before It Can Scale',            price: 0.015, payer: '0xC5d6E7f8A9b1cdef', settlement: 'stl_7mKv4Yq', time: '31 min ago' },
-      { id: '4',  article: "Ghost vs WordPress in 2025: A Creator's Honest Take",     price: 0.004, payer: '0xD7e8F9a0B2c3defa', settlement: 'stl_1nLw5Zr', time: '1 hr ago' },
-      { id: '5',  article: 'The Arc Blockchain Opportunity Nobody Is Talking About',  price: 0.012, payer: '0xE9f0A1b2C4d5ef01', settlement: 'stl_6oMx6As', time: '1 hr ago' },
-      { id: '6',  article: 'Micropayments: Why Every Previous Attempt Failed',        price: 0.020, payer: '0xF1a2B3c4D6e7f012', settlement: 'stl_2pNy7Bt', time: '2 hr ago' },
-      { id: '7',  article: 'The Quiet Death of the Subscription Bundle',              price: 0.008, payer: '0xA3b4C5d6E8f9a123', settlement: 'stl_9qOz8Cu', time: '3 hr ago' },
-      { id: '8',  article: "Building on Arc: A Developer's First 30 Days",            price: 0.025, payer: '0xB5c6D7e8F0a1b234', settlement: 'stl_4rPa9Dv', time: '4 hr ago' },
-      { id: '9',  article: "Ghost vs WordPress in 2025: A Creator's Honest Take",     price: 0.004, payer: '0xC7d8E9f0A2b3c345', settlement: 'stl_5sQb0Ew', time: '5 hr ago' },
-      { id: '10', article: 'Why DeFi Needs Better UX Before It Can Scale',            price: 0.015, payer: '0xD9e0F1a2B4c5d456', settlement: 'stl_0tRc1Fx', time: '6 hr ago' },
-    ],
-    articles: [
-      { id: 'a1', title: 'The Arc Blockchain Opportunity Nobody Is Talking About', price: 0.012, category: 'crypto',   unlocks: 48 },
-      { id: 'a2', title: 'The Quiet Death of the Subscription Bundle',             price: 0.008, category: 'business', unlocks: 71 },
-      { id: 'a3', title: 'Why DeFi Needs Better UX Before It Can Scale',           price: 0.015, category: 'finance',  unlocks: 34 },
-      { id: 'a4', title: "Ghost vs WordPress in 2025: A Creator's Honest Take",    price: 0.004, category: 'tech',     unlocks: 93 },
-      { id: 'a5', title: 'Micropayments: Why Every Previous Attempt Failed',       price: 0.020, category: 'finance',  unlocks: 29 },
-      { id: 'a6', title: "Building on Arc: A Developer's First 30 Days",           price: 0.025, category: 'tutorial', unlocks: 37 },
-    ],
-  }
+  const [state, setState] = useState({
+    loading: true,
+    error:   null,
+    wallet:  '',
+    stats:   { totalEarnings: 0, totalUnlocked: 0, avgPrice: 0, activeReaders: 0 },
+    transactions: [],
+    articles:     [],
+  })
+
+  useEffect(() => {
+    fetch(`${API_BASE}/api/dashboard/stats`)
+      .then(r => {
+        if (!r.ok) throw new Error(`Dashboard API returned ${r.status}`)
+        return r.json()
+      })
+      .then(data => {
+        setState({
+          loading: false,
+          error:   null,
+          wallet:  data.wallet,
+          stats:   data.stats,
+          transactions: data.transactions.map(tx => ({
+            id:         tx.settlementId || `${tx.articleId}-${tx.timestamp}`,
+            article:    tx.articleId,
+            price:      tx.price,
+            payer:      tx.payer,
+            settlement: tx.settlementId,
+            time:       timeAgo(tx.timestamp),
+          })),
+          articles: data.articles.map(a => ({
+            id:       a.id,
+            title:    a.id,
+            category: 'other',
+            price:    a.price,
+            unlocks:  a.unlocks,
+          })),
+        })
+      })
+      .catch(err => setState(s => ({ ...s, loading: false, error: err.message })))
+  }, [])
+
+  return state
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
