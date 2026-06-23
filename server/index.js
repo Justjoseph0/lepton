@@ -3,8 +3,9 @@ import express from 'express'
 import cors from 'cors'
 import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
-import articlesRouter from './routes/articles.js'
-import paymentsRouter from './routes/payments.js'
+import articlesRouter  from './routes/articles.js'
+import paymentsRouter  from './routes/payments.js'
+import dashboardRouter from './routes/dashboard.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const app = express()
@@ -19,8 +20,9 @@ app.use(express.json())
 // Serve the Ghost embed script publicly
 app.use('/embed', express.static(join(__dirname, '../embed')))
 
-app.use('/api/articles', articlesRouter)
-app.use('/api/payments', paymentsRouter)
+app.use('/api/articles',  articlesRouter)
+app.use('/api/payments',  paymentsRouter)
+app.use('/api/dashboard', dashboardRouter)
 
 app.get('/health', (_req, res) => res.json({ status: 'ok' }))
 

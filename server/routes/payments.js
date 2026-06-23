@@ -1,6 +1,7 @@
 import { createGatewayMiddleware } from '@circle-fin/x402-batching/server'
 import { Router } from 'express'
 import { formatUsdcAmount, getArticlePrice } from '../lib/articlePrices.js'
+import { logTransaction } from '../lib/transactionLog.js'
 
 const router = Router()
 
@@ -124,6 +125,13 @@ function logPaymentAttempt(req, res, next) {
 router.get('/unlock/:articleId', logPaymentAttempt, dynamicGatewayMiddleware, (req, res) => {
   console.log('[payments/unlock] ✓ verified:', JSON.stringify(req.payment))
   const { payer, amount, network, transaction } = req.payment
+  logTransaction({
+    articleId:    req.params.articleId,
+    price:        req.inkpayPrice,
+    payer,
+    settlementId: transaction,
+    timestamp:    new Date().toISOString(),
+  })
   res.json({
     unlocked: true,
     articleId: req.params.articleId,

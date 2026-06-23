@@ -26,3 +26,7 @@ export function getArticlePrice(articleId) {
 export function formatUsdcAmount(price) {
   return `$${normalizePrice(price).toFixed(3)}`
 }
+
+export function getAllPrices() {
+  return Array.from(articlePrices.entries()).map(([id, price]) => ({ id, price }))
+}
