@@ -383,6 +383,7 @@
         if (r1.status !== 402) {
           throw new Error('Expected 402 from ' + API_BASE + ' — is the Inkpay server reachable? (got ' + r1.status + ')')
         }
+        console.log('[inkpay] r1 status:', r1.status, 'PAYMENT-REQUIRED header:', r1.headers.get('PAYMENT-REQUIRED'))
         var challenge = b64d(r1.headers.get('PAYMENT-REQUIRED'))
         var accepted  = challenge.accepts[0]
         var chainId   = parseInt(accepted.network.split(':')[1], 10)
@@ -451,6 +452,7 @@
         })
       })
       .then(function (r2) {
+        console.log('[inkpay] r2 status:', r2.status, 'Content-Type:', r2.headers.get('content-type'))
         if (r2.ok) return r2.json()
         return r2.json().catch(function () { return {} }).then(function (body) {
           throw new Error(body.error || 'Payment failed (' + r2.status + ')')
