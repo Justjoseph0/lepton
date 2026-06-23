@@ -1,30 +1,18 @@
-import { readFileSync, writeFileSync, mkdirSync } from 'fs'
-import { fileURLToPath } from 'url'
-import { dirname, join } from 'path'
-
-const __dirname = dirname(fileURLToPath(import.meta.url))
-const DATA_DIR  = join(__dirname, '../data')
-const DATA_FILE = join(DATA_DIR, 'articlePrices.json')
+import pool from './db.js'
 
 const DEFAULT_PRICE = 0.001
 const MIN_PRICE     = 0.001
 const MAX_PRICE     = 0.05
 
-const articlePrices = new Map()
+const cache = new Map()
 
-// Load persisted prices on startup
-mkdirSync(DATA_DIR, { recursive: true })
-try {
-  const obj = JSON.parse(readFileSync(DATA_FILE, 'utf8'))
-  for (const [id, price] of Object.entries(obj)) {
-    articlePrices.set(id, price)
-  }
-  console.log(`[articlePrices] loaded ${articlePrices.size} price(s) from disk`)
-} catch (_) {}
-
-function persist() {
-  writeFileSync(DATA_FILE, JSON.stringify(Object.fromEntries(articlePrices), null, 2), 'utf8')
-}
+// Hydrate cache from DB on startup — reads stay synchronous from cache
+pool.query('SELECT article_id, price FROM article_prices')
+  .then(({ rows }) => {
+    for (const row of rows) cache.set(row.article_id, Number(row.price))
+    console.log(`[articlePrices] loaded ${rows.length} price(s) from DB`)
+  })
+  .catch(err => console.error('[articlePrices] failed to load from DB:', err.message))
 
 export function normalizePrice(price) {
   const numeric = Number(price)
@@ -34,15 +22,20 @@ export function normalizePrice(price) {
 
 export function setArticlePrice(articleId, price) {
   if (!articleId) return null
-  const normalizedPrice = normalizePrice(price)
-  articlePrices.set(String(articleId), normalizedPrice)
-  persist()
-  return normalizedPrice
+  const normalized = normalizePrice(price)
+  cache.set(String(articleId), normalized)
+  pool.query(
+    `INSERT INTO article_prices (article_id, price)
+     VALUES ($1, $2)
+     ON CONFLICT (article_id) DO UPDATE SET price = $2`,
+    [String(articleId), normalized]
+  ).catch(err => console.error('[articlePrices] DB write failed:', err.message))
+  return normalized
 }
 
 export function getArticlePrice(articleId) {
   if (!articleId) return DEFAULT_PRICE
-  return articlePrices.get(String(articleId)) ?? DEFAULT_PRICE
+  return cache.get(String(articleId)) ?? DEFAULT_PRICE
 }
 
 export function formatUsdcAmount(price) {
@@ -50,5 +43,5 @@ export function formatUsdcAmount(price) {
 }
 
 export function getAllPrices() {
-  return Array.from(articlePrices.entries()).map(([id, price]) => ({ id, price }))
+  return Array.from(cache.entries()).map(([id, price]) => ({ id, price }))
 }
