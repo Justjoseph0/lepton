@@ -152,6 +152,83 @@ function SectionHeading({ children }) {
   )
 }
 
+function WithdrawSection() {
+  const [status,   setStatus]   = useState(null)   // null | 'loading' | 'ok' | 'err'
+  const [result,   setResult]   = useState(null)
+  const [errorMsg, setErrorMsg] = useState(null)
+
+  async function handleWithdraw() {
+    setStatus('loading')
+    setResult(null)
+    setErrorMsg(null)
+    try {
+      const r = await fetch('/api/dashboard/withdraw', { method: 'POST',
+        headers: { 'Content-Type': 'application/json' }, body: '{}' })
+      const data = await r.json()
+      if (!r.ok) { setStatus('err'); setErrorMsg(data.error ?? `Error ${r.status}`); return }
+      setStatus('ok')
+      setResult(data)
+    } catch (err) {
+      setStatus('err')
+      setErrorMsg(err.message)
+    }
+  }
+
+  return (
+    <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
+      <div className="h-1 bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500" />
+      <div className="px-6 py-5">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <p className="text-sm font-semibold text-white">Withdraw Gateway Earnings</p>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Moves your full available Gateway balance to your seller wallet on Arc Testnet
+            </p>
+          </div>
+          <button
+            onClick={handleWithdraw}
+            disabled={status === 'loading'}
+            className={`shrink-0 px-5 py-2 rounded-xl text-sm font-semibold transition-all duration-150
+              focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500
+              ${status === 'loading'
+                ? 'bg-emerald-900/50 text-emerald-600 cursor-not-allowed'
+                : 'bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white'}`}
+          >
+            {status === 'loading' ? (
+              <span className="flex items-center gap-2">
+                <svg className="animate-spin w-3.5 h-3.5" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/>
+                </svg>
+                Withdrawing…
+              </span>
+            ) : 'Withdraw Earnings'}
+          </button>
+        </div>
+
+        {status === 'ok' && result && (
+          <div className="mt-4 bg-emerald-950/40 border border-emerald-800/50 rounded-xl px-4 py-3 space-y-1.5">
+            <p className="text-xs font-semibold text-emerald-400 uppercase tracking-wider">Withdrawal confirmed</p>
+            <p className="text-sm text-white font-mono">{result.amount} USDC → {result.recipient?.slice(0,6)}…{result.recipient?.slice(-4)}</p>
+            {result.mintTxHash && (
+              <p className="text-xs text-gray-400 font-mono break-all">
+                Tx: {result.mintTxHash}
+              </p>
+            )}
+          </div>
+        )}
+
+        {status === 'err' && errorMsg && (
+          <div className="mt-4 bg-red-950/40 border border-red-800/50 rounded-xl px-4 py-3">
+            <p className="text-xs font-semibold text-red-400 uppercase tracking-wider mb-1">Withdrawal failed</p>
+            <p className="text-sm text-red-300">{errorMsg}</p>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function Dashboard() {
@@ -216,6 +293,9 @@ export default function Dashboard() {
 
             {/* Script tag generator */}
             <ScriptTag wallet={wallet} />
+
+            {/* Gateway withdrawal */}
+            <WithdrawSection />
 
             {/* Recent transactions */}
             <section>
