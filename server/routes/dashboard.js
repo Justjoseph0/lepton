@@ -7,6 +7,9 @@ const router = Router()
 
 const GATEWAY_BALANCE_URL = 'https://gateway-api-testnet.circle.com/v1/balances'
 const ARC_TESTNET_DOMAIN  = 26
+// Circle charges ~$0.0035 protocol fee per Arc→Arc withdrawal; balance must cover
+// amount + actual_fee. Using 0.005 as a conservative buffer above the observed fee.
+const WITHDRAWAL_FEE_BUFFER = 0.005
 
 function sanitizeError(err) {
   const msg = err instanceof Error ? err.message : String(err)
@@ -66,15 +69,23 @@ router.post('/withdraw', async (req, res) => {
   }
 
   try {
-    // Resolve withdrawal amount: use provided amount or fetch full available balance
+    // Resolve withdrawal amount: use provided amount or derive from available balance
     let { amount } = req.body ?? {}
 
     if (!amount) {
-      const available = await fetchGatewayBalance(sellerAddress)
-      if (!available || Number(available) === 0) {
+      const available = parseFloat(await fetchGatewayBalance(sellerAddress))
+      if (!available || available === 0) {
         return res.status(400).json({ error: 'No Gateway balance available to withdraw' })
       }
-      amount = available
+      // Circle requires balance >= withdrawal_amount + protocol_fee (~$0.0035).
+      // Subtract fee buffer so the request doesn't exceed the available balance.
+      const net = available - WITHDRAWAL_FEE_BUFFER
+      if (net <= 0) {
+        return res.status(400).json({
+          error: `Gateway balance (${available} USDC) is too low to cover Circle's protocol fee (~$0.0035). Accumulate more earnings first.`,
+        })
+      }
+      amount = net.toFixed(6)
     }
 
     const gateway = new GatewayClient({
