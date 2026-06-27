@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { priceArticle } from '../lib/agent.js'
 
 const DEPTH_LABELS = {
@@ -114,16 +115,52 @@ function ResultCard({ result }) {
 }
 
 export default function AgentDemo() {
+  const navigate = useNavigate()
   const [title, setTitle] = useState('')
   const [ghostSlug, setGhostSlug] = useState('')
   const [content, setContent] = useState(PLACEHOLDER_ARTICLE)
   const [blogUrl, setBlogUrl] = useState('')
+  const [sellerWallet, setSellerWallet] = useState('')
+  const [authChecked, setAuthChecked] = useState(false)
+  const [loggedIn, setLoggedIn] = useState(false)
   const [result, setResult] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
 
+  // Capture the logged-in creator's wallet from their session on page load.
+  useEffect(() => {
+    let cancelled = false
+    async function loadSession() {
+      try {
+        const res = await fetch('/api/auth/me', { credentials: 'include' })
+        if (cancelled) return
+        if (res.ok) {
+          const { creator } = await res.json()
+          const wallet = creator?.wallet_address ?? ''
+          // Logged in but wallet onboarding isn't complete — send them to finish it
+          // so we never price an article with no wallet attached.
+          if (!wallet) {
+            navigate('/onboarding/wallet', { replace: true })
+            return
+          }
+          setSellerWallet(wallet)
+          setLoggedIn(true)
+        } else {
+          // 401 (or anything non-OK): treat as not logged in.
+          setLoggedIn(false)
+        }
+      } catch {
+        if (!cancelled) setLoggedIn(false)
+      } finally {
+        if (!cancelled) setAuthChecked(true)
+      }
+    }
+    loadSession()
+    return () => { cancelled = true }
+  }, [navigate])
+
   async function handlePrice() {
-    if (!content.trim()) return
+    if (!content.trim() || !loggedIn) return
     setLoading(true)
     setError(null)
     setResult(null)
@@ -137,6 +174,8 @@ export default function AgentDemo() {
         articleTitle: title || undefined,
         articleContent: content,
         blogUrl: blogUrl || undefined,
+        // Wallet comes from the creator's session — never typed in the UI.
+        sellerWallet: sellerWallet || undefined,
       })
       setResult(data)
     } catch (err) {
@@ -230,26 +269,41 @@ export default function AgentDemo() {
               />
             </div>
 
-            <button
-              onClick={handlePrice}
-              disabled={loading || !content.trim()}
-              className={`w-full py-3 rounded-xl font-semibold text-sm transition-all duration-150
-                focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500
-                ${loading || !content.trim()
-                  ? 'bg-indigo-900/50 text-indigo-600 cursor-not-allowed'
-                  : 'bg-indigo-600 hover:bg-indigo-500 active:scale-[0.99] text-white shadow-lg shadow-indigo-900/30'}
-              `}
-            >
-              {loading ? (
-                <span className="flex items-center justify-center gap-2">
-                  <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/>
-                  </svg>
-                  Agent is analyzing…
-                </span>
-              ) : 'Price This Article'}
-            </button>
+            {authChecked && !loggedIn ? (
+              <div className="bg-indigo-950/40 border border-indigo-900/50 rounded-xl px-4 py-4 text-center">
+                <p className="text-indigo-200 text-sm font-medium mb-2">
+                  Log in to price your articles
+                </p>
+                <a
+                  href="/auth"
+                  className="inline-block bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold
+                    px-5 py-2 rounded-lg transition"
+                >
+                  Log in
+                </a>
+              </div>
+            ) : (
+              <button
+                onClick={handlePrice}
+                disabled={loading || !content.trim() || !loggedIn}
+                className={`w-full py-3 rounded-xl font-semibold text-sm transition-all duration-150
+                  focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500
+                  ${loading || !content.trim() || !loggedIn
+                    ? 'bg-indigo-900/50 text-indigo-600 cursor-not-allowed'
+                    : 'bg-indigo-600 hover:bg-indigo-500 active:scale-[0.99] text-white shadow-lg shadow-indigo-900/30'}
+                `}
+              >
+                {loading ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/>
+                    </svg>
+                    Agent is analyzing…
+                  </span>
+                ) : 'Price This Article'}
+              </button>
+            )}
 
             {error && (
               <div className="bg-red-950/50 border border-red-900/50 rounded-xl px-4 py-3">

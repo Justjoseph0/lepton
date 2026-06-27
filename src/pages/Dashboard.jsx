@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -26,26 +27,52 @@ function timeAgo(ts) {
 }
 
 function useDashboardData() {
+  const navigate = useNavigate()
   const [state, setState] = useState({
     loading: true,
     error:   null,
     wallet:  '',
+    creator: null,
+    canWithdraw: false,
     stats:   { totalEarnings: 0, totalUnlocked: 0, avgPrice: 0, activeReaders: 0 },
     transactions: [],
     articles:     [],
   })
 
   useEffect(() => {
-    fetch('/api/dashboard/stats')
-      .then(r => {
+    let cancelled = false
+
+    async function load() {
+      try {
+        // 1. Confirm session + wallet onboarding before loading any dashboard data.
+        const meRes = await fetch('/api/auth/me', { credentials: 'include' })
+        if (cancelled) return
+        if (meRes.status === 401) {
+          navigate('/auth', { replace: true })
+          return
+        }
+        if (!meRes.ok) throw new Error(`Auth check failed (${meRes.status})`)
+
+        const { creator } = await meRes.json()
+        if (!creator?.wallet_address) {
+          navigate('/onboarding/wallet', { replace: true })
+          return
+        }
+
+        // 2. Session is valid — load stats. The server scopes everything to this
+        //    creator via the session, so no query params are needed.
+        const r = await fetch('/api/dashboard/stats', { credentials: 'include' })
+        if (cancelled) return
         if (!r.ok) throw new Error(`Dashboard API returned ${r.status}`)
-        return r.json()
-      })
-      .then(data => {
+        const data = await r.json()
+        if (cancelled) return
+
         setState({
           loading: false,
           error:   null,
           wallet:  data.wallet,
+          creator: data.creator ?? { name: creator.name, email: creator.email },
+          canWithdraw: data.canWithdraw ?? false,
           stats:   data.stats,
           transactions: data.transactions.map(tx => ({
             id:         tx.settlementId || `${tx.articleId}-${tx.timestamp}`,
@@ -63,9 +90,14 @@ function useDashboardData() {
             unlocks:  a.unlocks,
           })),
         })
-      })
-      .catch(err => setState(s => ({ ...s, loading: false, error: err.message })))
-  }, [])
+      } catch (err) {
+        if (!cancelled) setState(s => ({ ...s, loading: false, error: err.message }))
+      }
+    }
+
+    load()
+    return () => { cancelled = true }
+  }, [navigate])
 
   return state
 }
@@ -152,12 +184,16 @@ function SectionHeading({ children }) {
   )
 }
 
-function WithdrawSection() {
+const WITHDRAW_DISABLED_NOTE =
+  "Withdrawal is currently only available for the platform's test wallet — full creator withdrawal coming soon."
+
+function WithdrawSection({ canWithdraw }) {
   const [status,   setStatus]   = useState(null)   // null | 'loading' | 'ok' | 'err'
   const [result,   setResult]   = useState(null)
   const [errorMsg, setErrorMsg] = useState(null)
 
   async function handleWithdraw() {
+    if (!canWithdraw) return
     setStatus('loading')
     setResult(null)
     setErrorMsg(null)
@@ -187,10 +223,11 @@ function WithdrawSection() {
           </div>
           <button
             onClick={handleWithdraw}
-            disabled={status === 'loading'}
+            disabled={status === 'loading' || !canWithdraw}
+            title={!canWithdraw ? WITHDRAW_DISABLED_NOTE : undefined}
             className={`shrink-0 px-5 py-2 rounded-xl text-sm font-semibold transition-all duration-150
               focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500
-              ${status === 'loading'
+              ${status === 'loading' || !canWithdraw
                 ? 'bg-emerald-900/50 text-emerald-600 cursor-not-allowed'
                 : 'bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white'}`}
           >
@@ -205,6 +242,12 @@ function WithdrawSection() {
             ) : 'Withdraw Earnings'}
           </button>
         </div>
+
+        {!canWithdraw && (
+          <div className="mt-4 bg-gray-800/40 border border-gray-700/50 rounded-xl px-4 py-3">
+            <p className="text-xs text-gray-400">{WITHDRAW_DISABLED_NOTE}</p>
+          </div>
+        )}
 
         {status === 'ok' && result && (
           <div className="mt-4 bg-emerald-950/40 border border-emerald-800/50 rounded-xl px-4 py-3 space-y-1.5">
@@ -232,16 +275,36 @@ function WithdrawSection() {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function Dashboard() {
-  const { loading, error, wallet, stats, transactions, articles } = useDashboardData()
+  const navigate = useNavigate()
+  const { loading, error, wallet, creator, canWithdraw, stats, transactions, articles } = useDashboardData()
+
+  const creatorName = creator?.name || creator?.email || ''
+
+  async function handleLogout() {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' })
+    } finally {
+      navigate('/auth', { replace: true })
+    }
+  }
 
   return (
     <div className="min-h-screen bg-gray-950 text-white">
       {/* Nav */}
       <nav className="px-8 py-4 flex items-center justify-between border-b border-gray-800">
         <a href="/" className="text-xl font-bold text-indigo-400">Inkpay</a>
-        <div className="flex items-center gap-2">
-          <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-          <span className="font-mono text-sm text-gray-300">{truncate(wallet)}</span>
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
+            <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+            <span className="font-mono text-sm text-gray-400">{truncate(wallet)}</span>
+          </div>
+          <button
+            onClick={handleLogout}
+            className="px-3 py-1.5 rounded-lg text-xs font-semibold text-gray-300 border border-gray-700
+              hover:border-gray-500 hover:text-white transition"
+          >
+            Log out
+          </button>
         </div>
       </nav>
 
@@ -249,9 +312,11 @@ export default function Dashboard() {
 
         {/* Header */}
         <div>
-          <h1 className="text-3xl font-bold">Your Inkpay Dashboard</h1>
+          <h1 className="text-3xl font-bold">
+            {creatorName ? `Welcome, ${creatorName}` : 'Your Inkpay Dashboard'}
+          </h1>
           <p className="text-gray-500 mt-1 text-sm">
-            Earnings, integrations, and article performance for {truncate(wallet)}
+            Earnings, integrations, and article performance for your published articles
           </p>
         </div>
 
@@ -295,7 +360,7 @@ export default function Dashboard() {
             <ScriptTag wallet={wallet} />
 
             {/* Gateway withdrawal */}
-            <WithdrawSection />
+            <WithdrawSection canWithdraw={canWithdraw} />
 
             {/* Recent transactions */}
             <section>

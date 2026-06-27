@@ -8,6 +8,7 @@ pool.query('SELECT * FROM transactions ORDER BY timestamp DESC')
     const records = rows.map(r => ({
       articleId:    r.article_id,
       price:        Number(r.price),
+      walletAddress: r.wallet_address ?? null,
       payer:        r.payer,
       settlementId: r.settlement_id,
       timestamp:    r.timestamp instanceof Date ? r.timestamp.toISOString() : r.timestamp,
@@ -17,13 +18,13 @@ pool.query('SELECT * FROM transactions ORDER BY timestamp DESC')
   })
   .catch(err => console.error('[transactionLog] failed to load from DB:', err.message))
 
-export function logTransaction({ articleId, price, payer, settlementId, timestamp }) {
-  const record = { articleId, price, payer, settlementId, timestamp }
+export function logTransaction({ articleId, price, walletAddress, payer, settlementId, timestamp }) {
+  const record = { articleId, price, walletAddress: walletAddress ?? null, payer, settlementId, timestamp }
   cache.unshift(record)
   pool.query(
-    `INSERT INTO transactions (article_id, price, payer, settlement_id, timestamp)
-     VALUES ($1, $2, $3, $4, $5)`,
-    [articleId, price, payer, settlementId, timestamp]
+    `INSERT INTO transactions (article_id, price, wallet_address, payer, settlement_id, timestamp)
+     VALUES ($1, $2, $3, $4, $5, $6)`,
+    [articleId, price, walletAddress ?? null, payer, settlementId, timestamp]
   ).catch(err => console.error('[transactionLog] DB write failed:', err.message))
 }
 

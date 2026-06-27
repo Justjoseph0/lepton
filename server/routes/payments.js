@@ -1,6 +1,6 @@
 import { createGatewayMiddleware } from '@circle-fin/x402-batching/server'
 import { Router } from 'express'
-import { formatUsdcAmount, getArticlePrice } from '../lib/articlePrices.js'
+import { formatUsdcAmount, getArticlePricing } from '../lib/articlePrices.js'
 import { logTransaction } from '../lib/transactionLog.js'
 
 const router = Router()
@@ -9,39 +9,60 @@ if (!process.env.SELLER_ADDRESS) {
   console.warn('[payments] SELLER_ADDRESS is not set — /unlock routes will return 500')
 }
 
-const gateway = process.env.SELLER_ADDRESS
-  ? createGatewayMiddleware({
-      sellerAddress: process.env.SELLER_ADDRESS,
+const gatewayBySellerWallet = new Map()
+const gatewayMiddlewareBySellerAndAmount = new Map()
+
+function normalizeWallet(walletAddress) {
+  return walletAddress ? String(walletAddress).trim() : ''
+}
+
+function gatewayForSellerWallet(sellerWallet) {
+  if (!gatewayBySellerWallet.has(sellerWallet)) {
+    gatewayBySellerWallet.set(sellerWallet, createGatewayMiddleware({
+      sellerAddress: sellerWallet,
       facilitatorUrl: 'https://gateway-api-testnet.circle.com',
       networks: ['eip155:5042002'], // Arc testnet
+    }))
+  }
+
+  return gatewayBySellerWallet.get(sellerWallet)
+}
+
+function gatewayMiddlewareForSellerAndAmount(sellerWallet, amount) {
+  if (!sellerWallet) {
+    return (_req, res) => res.status(500).json({
+      error: 'No seller wallet configured for this article',
     })
-  : null
-
-const gatewayMiddlewareByAmount = new Map()
-
-function gatewayMiddlewareForAmount(amount) {
-  if (!gateway) {
-    return (_req, res) => res.status(500).json({ error: 'SELLER_ADDRESS env var not configured' })
   }
 
-  if (!gatewayMiddlewareByAmount.has(amount)) {
-    gatewayMiddlewareByAmount.set(amount, gateway.require(amount))
+  const cacheKey = `${sellerWallet.toLowerCase()}:${amount}`
+  if (!gatewayMiddlewareBySellerAndAmount.has(cacheKey)) {
+    const gateway = gatewayForSellerWallet(sellerWallet)
+    gatewayMiddlewareBySellerAndAmount.set(cacheKey, gateway.require(amount))
   }
 
-  return gatewayMiddlewareByAmount.get(amount)
+  return gatewayMiddlewareBySellerAndAmount.get(cacheKey)
 }
 
 // Look up the latest AI-decided article price and require that amount.
 // Falls back to $0.001 for articles that have not been priced yet.
 function dynamicGatewayMiddleware(req, res, next) {
   const articleId = req.params.articleId
-  const price     = getArticlePrice(articleId)
+  const { price, walletAddress } = getArticlePricing(articleId)
+  const sellerWallet = normalizeWallet(walletAddress) || normalizeWallet(process.env.SELLER_ADDRESS)
   const amount    = formatUsdcAmount(price)
 
-  console.log('[payments/unlock] dynamicGatewayMiddleware entered:', { articleId, price, amount })
+  console.log('[payments/unlock] dynamicGatewayMiddleware entered:', {
+    articleId,
+    price,
+    amount,
+    sellerWallet,
+    usedFallbackSeller: !walletAddress,
+  })
 
-  req.inkpayPrice  = price
-  req.inkpayAmount = amount
+  req.inkpayPrice        = price
+  req.inkpayAmount       = amount
+  req.inkpaySellerWallet = sellerWallet
 
   // Intercept res.end so we can see exactly what status + headers the gateway
   // sends before the response is flushed (res.json is never called by gateway).
@@ -61,7 +82,7 @@ function dynamicGatewayMiddleware(req, res, next) {
 
   let promise
   try {
-    promise = gatewayMiddlewareForAmount(amount)(req, res, next)
+    promise = gatewayMiddlewareForSellerAndAmount(sellerWallet, amount)(req, res, next)
   } catch (syncErr) {
     console.error('[payments/unlock] gateway.require() threw SYNCHRONOUSLY:')
     console.error(syncErr?.stack ?? syncErr)
@@ -128,12 +149,14 @@ router.get('/unlock/:articleId', logPaymentAttempt, dynamicGatewayMiddleware, (r
   console.log('[payments/unlock] → calling logTransaction with:', {
     articleId:    req.params.articleId,
     price:        req.inkpayPrice,
+    walletAddress: req.inkpaySellerWallet,
     payer,
     settlementId: transaction,
   })
   logTransaction({
     articleId:    req.params.articleId,
     price:        req.inkpayPrice,
+    walletAddress: req.inkpaySellerWallet,
     payer,
     settlementId: transaction,
     timestamp:    new Date().toISOString(),

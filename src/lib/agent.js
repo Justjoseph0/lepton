@@ -1,13 +1,13 @@
 // Frontend wrapper for the Inkpay AI pricing agent.
 // Calls POST /api/articles/price and returns the structured pricing decision.
 
-export async function priceArticle({ articleId, articleTitle, articleContent, blogUrl }) {
+export async function priceArticle({ articleId, articleTitle, articleContent, blogUrl, sellerWallet }) {
   if (!articleContent?.trim()) throw new Error('articleContent is required')
 
   const res = await fetch('/api/articles/price', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ articleId, articleTitle, articleContent, blogUrl }),
+    body: JSON.stringify({ articleId, articleTitle, articleContent, blogUrl, sellerWallet }),
   })
 
   if (!res.ok) {
