@@ -1,7 +1,8 @@
 import { Router } from 'express'
 import { GatewayClient } from '@circle-fin/x402-batching/client'
+import pool from '../lib/db.js'
 import { getAllPrices } from '../lib/articlePrices.js'
-import { getAllTransactions, getStats } from '../lib/transactionLog.js'
+import { getAllTransactions } from '../lib/transactionLog.js'
 
 const router = Router()
 
@@ -31,24 +32,83 @@ async function fetchGatewayBalance(sellerAddress) {
   return data.balances?.find(b => b.domain === ARC_TESTNET_DOMAIN)?.balance ?? '0'
 }
 
+// Compute earnings stats over a specific set of transactions (the creator's own).
+function computeStats(txs) {
+  const total  = txs.reduce((sum, t) => sum + t.price, 0)
+  const unique = new Set(txs.map(t => t.payer)).size
+  return {
+    totalEarnings: total,
+    totalUnlocked: txs.length,
+    avgPrice:      txs.length ? total / txs.length : 0,
+    activeReaders: unique,
+  }
+}
+
 // GET /api/dashboard/stats
-router.get('/stats', (_req, res) => {
-  const allTx = getAllTransactions()
+// Scoped to the logged-in creator: requires an active session and a wallet on file.
+router.get('/stats', async (req, res) => {
+  const creatorId = req.session?.creatorId
+  if (!creatorId) {
+    return res.status(401).json({ error: 'Not logged in' })
+  }
+
+  let creator
+  try {
+    const { rows } = await pool.query(
+      `select name, email, wallet_address
+         from creators
+        where id = $1`,
+      [creatorId],
+    )
+    creator = rows[0]
+  } catch (err) {
+    console.error('[dashboard/stats] creator lookup failed:', err)
+    return res.status(500).json({ error: 'Could not load dashboard' })
+  }
+
+  if (!creator) {
+    // Session points at a creator that no longer exists — clear it.
+    req.session.destroy(() => {})
+    return res.status(401).json({ error: 'Not logged in' })
+  }
+
+  if (!creator.wallet_address) {
+    return res.status(400).json({
+      error: 'Complete wallet onboarding to view your dashboard',
+      needsWallet: true,
+    })
+  }
+
+  // Eth addresses can differ in case (checksum) — compare lowercased.
+  const wallet = creator.wallet_address.toLowerCase()
+  const ownedBy = addr => (addr ?? '').toLowerCase() === wallet
+
+  const allTx = getAllTransactions().filter(tx => ownedBy(tx.walletAddress))
 
   const unlockCounts = {}
   for (const tx of allTx) {
     unlockCounts[tx.articleId] = (unlockCounts[tx.articleId] || 0) + 1
   }
 
-  const articles = getAllPrices().map(({ id, price }) => ({
-    id,
-    price,
-    unlocks: unlockCounts[id] || 0,
-  }))
+  const articles = getAllPrices()
+    .filter(a => ownedBy(a.walletAddress))
+    .map(({ id, price }) => ({
+      id,
+      price,
+      unlocks: unlockCounts[id] || 0,
+    }))
+
+  // Withdrawal moves the platform's Gateway balance, and the server only holds
+  // the platform's private key — so only the creator whose wallet IS the
+  // platform wallet can withdraw. Tell the frontend so it can reflect that.
+  const sellerAddress = process.env.SELLER_ADDRESS ?? ''
+  const canWithdraw = sellerAddress !== '' && wallet === sellerAddress.toLowerCase()
 
   res.json({
-    wallet:       process.env.SELLER_ADDRESS || '',
-    stats:        getStats(),
+    wallet:       creator.wallet_address,
+    creator:      { name: creator.name ?? null, email: creator.email },
+    canWithdraw,
+    stats:        computeStats(allTx),
     transactions: allTx.slice(0, 10),
     articles,
   })
@@ -56,8 +116,15 @@ router.get('/stats', (_req, res) => {
 
 // POST /api/dashboard/withdraw
 // Body (all optional): { amount?: string }
-// Withdraws from the seller's Gateway balance on Arc Testnet to their wallet.
+// Withdraws the platform's Gateway balance on Arc Testnet. Restricted to the
+// creator whose wallet matches SELLER_ADDRESS — the only wallet the server holds
+// a private key for. All other creators get a 501 until per-creator custody exists.
 router.post('/withdraw', async (req, res) => {
+  const creatorId = req.session?.creatorId
+  if (!creatorId) {
+    return res.status(401).json({ error: 'Not logged in' })
+  }
+
   const privateKey    = process.env.SELLER_PRIVATE_KEY
   const sellerAddress = process.env.SELLER_ADDRESS
 
@@ -66,6 +133,32 @@ router.post('/withdraw', async (req, res) => {
   }
   if (!sellerAddress) {
     return res.status(500).json({ error: 'SELLER_ADDRESS is not configured on the server' })
+  }
+
+  // Verify the session creator owns the platform wallet before touching funds.
+  let creator
+  try {
+    const { rows } = await pool.query(
+      `select wallet_address from creators where id = $1`,
+      [creatorId],
+    )
+    creator = rows[0]
+  } catch (err) {
+    console.error('[dashboard/withdraw] creator lookup failed:', err)
+    return res.status(500).json({ error: 'Could not verify account' })
+  }
+
+  if (!creator) {
+    req.session.destroy(() => {})
+    return res.status(401).json({ error: 'Not logged in' })
+  }
+
+  const isPlatformWallet =
+    (creator.wallet_address ?? '').toLowerCase() === sellerAddress.toLowerCase()
+  if (!isPlatformWallet) {
+    return res.status(501).json({
+      error: 'Withdrawal is not yet supported for multi-creator accounts',
+    })
   }
 
   try {

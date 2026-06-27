@@ -146,11 +146,12 @@ function logDetailedError(context, err) {
 }
 
 // POST /api/articles/price
-// Body: { articleId?, articleTitle, articleContent, blogUrl? }
+// Body: { articleId?, articleTitle, articleContent, blogUrl?, sellerWallet? }
 // Returns: { price, priceInAtomicUnits, reasoning, category, depthLevel,
 //            readerValue, wordCount, readingTime, confidenceScore, articleId? }
 router.post('/price', async (req, res) => {
-  const { articleId, articleTitle, articleContent, blogUrl } = req.body
+  console.log('[articles/price] raw request body:', JSON.stringify(req.body))
+  const { articleId, articleTitle, articleContent, blogUrl, sellerWallet } = req.body
 
   if (!articleContent || articleContent.trim().length < 10) {
     return res.status(400).json({ error: 'articleContent is required' })
@@ -203,9 +204,9 @@ ${articleContent.trim()}`
     const priceInAtomicUnits = Math.round(price * 1_000_000)
     let storedPrice
     try {
-      storedPrice = setArticlePrice(articleId, price)
+      storedPrice = setArticlePrice(articleId, price, sellerWallet)
     } catch (err) {
-      console.error('[articles/price] setArticlePrice inputs:', { articleId, price })
+      console.error('[articles/price] setArticlePrice inputs:', { articleId, price, sellerWallet })
       logDetailedError('setArticlePrice', err)
       throw err
     }
