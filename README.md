@@ -76,9 +76,4 @@ Paste into your Ghost admin → Settings → Code Injection → Site Footer:
 
 That's it. Every article page will be paywalled automatically. The AI agent prices each one independently.
 
-## Hackathon context
 
-- **30% Agentic sophistication** — OpenAI GPT-4o makes real per-article pricing decisions
-- **30% Traction** — readers can make real test USDC payments on Arc testnet
-- **20% Circle tool usage** — Nanopayments, Gateway, x402 protocol, Agent Wallets
-- **20% Innovation** — first pay-per-article layer built specifically for Ghost
